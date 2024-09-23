@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+/// A reusable placeholder view that animates while an image is loading.
 struct PlaceHolderView: View {
     var body: some View {
         Color.secondary.opacity(0.15)

@@ -14,6 +14,7 @@ struct ArtiSanApp: App {
             SearchView()
                 .frame(minWidth: 400, maxWidth: 400, minHeight: 400, maxHeight: 1200)
                 .onAppear {
+                    /// Disables opening a new tab
                     NSWindow.allowsAutomaticWindowTabbing = false
                 }
         }
@@ -21,6 +22,7 @@ struct ArtiSanApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 400, height: 600)
         .commands {
+            /// Removed unused menus
             CommandGroup(replacing: .newItem) { EmptyView() }
             CommandGroup(replacing: .appSettings) { EmptyView() }
             CommandGroup(replacing: .appVisibility) { EmptyView() }

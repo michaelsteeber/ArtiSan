@@ -7,136 +7,125 @@
 
 import SwiftUI
 
+/// A ScrollView with all results returned from the iTunes Search API. If there are no results or the app is searching, placeholder content is shown.
 struct SearchResultsView: View {
     @Environment(\.openWindow) var openWindow
     @Binding var searchResults: [Album]?
+    var isSearching: Bool
+    let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
     var body: some View {
         if let searchResults {
             if searchResults.isEmpty {
                     ContentUnavailableView("No Results", systemImage: "square.3.layers.3d.down.right.slash")
                         .frame(maxHeight: .infinity)
+                        .symbolEffect(.pulse, options: .speed(1.5), isActive: isSearching)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(searchResults, id: \.self) { result in
                             Button {
                                 openWindow(value: result)
                             } label: {
-                                VStack {
-                                    AsyncImage(url: result.image(.thumbnail)) { image in
-                                        image
-                                            .resizable()
-                                            .aspectRatio(1.0, contentMode: .fit)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    } placeholder: {
-                                        PlaceHolderView()
-                                            .aspectRatio(1.0, contentMode: .fit)
-                                    }
-                                    
-                                    Text(result.collectionName)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .multilineTextAlignment(.leading)
-                                        .lineLimit(1)
-                                        .font(.callout)
-                                    Text(result.artistName)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .multilineTextAlignment(.leading)
-                                        .lineLimit(1)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
+                                ResultView(result: result)
                             }
                             .buttonStyle(.plain)
-                            .padding(.top, 15)
+                            .padding(.top, 5)
                         }
                     }
-                    .padding(EdgeInsets(top: 0, leading: 15, bottom: 15, trailing: 15))
+                    .padding(EdgeInsets(top: 10, leading: 15, bottom: 15, trailing: 15))
                 }
                 .frame(maxHeight: .infinity)
+                .scrollClipDisabled()
             }
         } else {
-            ContentUnavailableView("Artisan", systemImage: "square.stack.3d.down.right")
-                .frame(maxHeight: .infinity)
+            Image(systemName: "music.quarternote.3")
+                .font(Font.system(size: 60))
+                .padding()
+                .foregroundStyle(.placeholder)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .symbolEffect(.pulse, options: .speed(1.5), isActive: isSearching)
         }
     }
 }
 
-struct iTunesResponse: Codable {
-    let resultCount: Int
-    let results: [Album]
-}
-
-struct Album: Codable, Hashable {
-    let wrapperType: String
-    let collectionType: String
-    let artistId: Int?
-    let collectionId: Int
-    let amgArtistId: Int?
-    let artistName: String
-    let collectionName: String
-    let collectionCensoredName: String?
+/// A single seearch result.
+struct ResultView: View {
+    @State private var isHovering = false
+    @State private var isDownloading = false
+    let result: Album
+    let curator = Curator()
     
-    let artistViewUrl: URL?
-    let collectionViewUrl: URL?
-    let artworkUrl60: URL
-    let artworkUrl100: URL
-    
-    let collectionPrice: Double?
-    let collectionExplicitness: String?
-    let contentAdvisoryRating: String?
-    let trackCount: Int?
-    let copyright: String?
-    let country: String?
-    let currency: String?
-    let releaseDate: String?
-    let primaryGenreName: String?
-    
-    enum Resolution {
-        case thumbnail, preview, full
-    }
-    
-    func image(_ resolution: Resolution) -> URL {
-        let dimensions: String
-        switch resolution {
-        case .thumbnail:
-            dimensions = "400x400"
-        case .preview:
-            dimensions = "1200x1200"
-        case .full:
-            dimensions = "6000x6000"
+    var body: some View {
+        VStack {
+            AsyncImage(url: result.image(.thumbnail), transaction: Transaction(animation: .easeInOut(duration: 0.5))) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(1.0, contentMode: .fit)
+                        .transition(.opacity)
+                default:
+                    PlaceHolderView()
+                        .aspectRatio(1.0, contentMode: .fit)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.primary.opacity(0.1), lineWidth: 1)
+            }
+            
+            HStack {
+                VStack {
+                    Text(result.collectionName)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(1)
+                        .font(.callout)
+                    Text(result.artistName)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(1)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if isHovering {
+                    Button {
+                        Task {
+                            isDownloading = true
+                            if let image = await curator.downloadImage(from: result.image(.full))?.0 {
+                                isDownloading = false
+                                let name = curator.getImageFileName(from: image, with: result.collectionName)
+                                if let url = curator.savePanel(name: name) {
+                                    Task { await curator.saveImage(image: image, path: url) }
+                                }
+                            }
+                        }
+                    } label: {
+                        if isDownloading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(EdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 0))
+                        }
+                    }
+                    .transition(.opacity)
+                    .accessibilityLabel("Download Image")
+                    .buttonStyle(.borderless)
+                }
+            }
         }
-        let urlString = artworkUrl100.absoluteString
-        let transformed = urlString.replacingOccurrences(of: "100x100bb", with: dimensions)
-        return URL(string: transformed)!
+        .onHover { hover in
+            withAnimation(.easeInOut(duration: 0.2)) { isHovering = hover }
+        }
     }
-    
-    static let fallback = Album(
-            wrapperType: "collection",
-            collectionType: "Album",
-            artistId: nil,
-            collectionId: 1497230760,
-            amgArtistId: nil,
-            artistName: "Tame Impala",
-            collectionName: "The Slow Rush",
-            collectionCensoredName: nil,
-            artistViewUrl: nil,
-            collectionViewUrl: nil,
-            artworkUrl60: URL(string: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/65/e3/e7/65e3e740-b69f-f5cb-f2e6-7dedb5265ac9/19UMGIM96748.rgb.jpg/60x60bb.jpg")!,
-            artworkUrl100: URL(string: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/65/e3/e7/65e3e740-b69f-f5cb-f2e6-7dedb5265ac9/19UMGIM96748.rgb.jpg/100x100bb.jpg")!,
-            collectionPrice: nil,
-            collectionExplicitness: nil,
-            contentAdvisoryRating: nil,
-            trackCount: nil,
-            copyright: nil,
-            country: nil,
-            currency: nil,
-            releaseDate: nil,
-            primaryGenreName: nil
-        )
 }
 
 #Preview {
-    SearchResultsView(searchResults: .constant([]))
+    SearchResultsView(searchResults: .constant([]), isSearching: false)
 }
